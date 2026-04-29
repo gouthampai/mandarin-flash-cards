@@ -6,18 +6,27 @@ import {
   Animated,
   StyleSheet,
   Dimensions,
-  SafeAreaView,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Speech from 'expo-speech';
+import { pinyin } from 'pinyin-pro';
 import { characters, getToneColor, getToneName } from '../data/characters';
 import { useProgress } from '../hooks/useProgress';
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
+
+const speak = (character) => {
+  Speech.stop();
+  Speech.speak(character, { language: 'zh-CN', rate: 1.0 });
+};
 
 const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.88;
 const CARD_HEIGHT = height * 0.48;
 
-export default function FlashCardScreen({ onGoToStats }) {
+export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
   const { progress, markCard, stats } = useProgress();
+  const { state: listenState, heard, permissionGranted, start: startListening, stop: stopListening, reset: resetListening } = useSpeechRecognition();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [filterMode, setFilterMode] = useState('all'); // 'all' | 'learning'
@@ -39,6 +48,7 @@ export default function FlashCardScreen({ onGoToStats }) {
       tension: 10,
       useNativeDriver: true,
     }).start();
+    if (!isFlipped) speak(card.character);
     setIsFlipped(!isFlipped);
   };
 
@@ -62,10 +72,15 @@ export default function FlashCardScreen({ onGoToStats }) {
     outputRange: [0, 0, 1, 1],
   });
 
-  const goNext = (known) => {
-    markCard(card.id, known);
+  const resetCard = () => {
     setIsFlipped(false);
     flipAnim.setValue(0);
+    resetListening();
+  };
+
+  const goNext = (known) => {
+    markCard(card.id, known);
+    resetCard();
     setTimeout(() => {
       setCurrentIndex(prev => {
         const next = prev + 1;
@@ -75,8 +90,7 @@ export default function FlashCardScreen({ onGoToStats }) {
   };
 
   const goPrev = () => {
-    setIsFlipped(false);
-    flipAnim.setValue(0);
+    resetCard();
     setTimeout(() => {
       setCurrentIndex(prev => (prev - 1 + filteredCards.length) % filteredCards.length);
     }, 50);
@@ -85,8 +99,7 @@ export default function FlashCardScreen({ onGoToStats }) {
   const setFilter = (mode) => {
     setFilterMode(mode);
     setCurrentIndex(0);
-    setIsFlipped(false);
-    flipAnim.setValue(0);
+    resetCard();
   };
 
   if (filteredCards.length === 0) {
@@ -109,9 +122,14 @@ export default function FlashCardScreen({ onGoToStats }) {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Mandarin Flash Cards</Text>
-        <TouchableOpacity onPress={onGoToStats} style={styles.statsBtn}>
-          <Text style={styles.statsBtnText}>Stats →</Text>
-        </TouchableOpacity>
+        <View style={styles.headerBtns}>
+          <TouchableOpacity onPress={onGoToCardList} style={styles.statsBtn}>
+            <Text style={styles.statsBtnText}>Cards</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onGoToStats} style={styles.statsBtn}>
+            <Text style={styles.statsBtnText}>Stats →</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Filter tabs */}
@@ -159,6 +177,9 @@ export default function FlashCardScreen({ onGoToStats }) {
           <Text style={styles.characterFrequency}>#{card.id} most common</Text>
           <Text style={styles.character}>{card.character}</Text>
           <Text style={styles.tapHint}>Tap to reveal</Text>
+          <TouchableOpacity style={styles.speakBtn} onPress={(e) => { e.stopPropagation?.(); speak(card.character); }}>
+            <Text style={styles.speakBtnText}>🔊</Text>
+          </TouchableOpacity>
           {cardProgress && (
             <View style={[styles.knownBadge, { backgroundColor: cardProgress.known ? '#27AE60' : '#E67E22' }]}>
               <Text style={styles.knownBadgeText}>{cardProgress.known ? '✓ Known' : '~ Learning'}</Text>
@@ -175,12 +196,66 @@ export default function FlashCardScreen({ onGoToStats }) {
             { transform: [{ rotateY: backInterpolate }], opacity: backOpacity },
           ]}
         >
+          <TouchableOpacity style={styles.speakBtn} onPress={(e) => { e.stopPropagation?.(); speak(card.character); }}>
+            <Text style={styles.speakBtnText}>🔊</Text>
+          </TouchableOpacity>
           <Text style={styles.pinyinLabel}>Pinyin</Text>
           <Text style={[styles.pinyin, { color: toneColor }]}>{card.pinyin}</Text>
           <Text style={[styles.toneName, { color: toneColor }]}>{getToneName(card.tone)}</Text>
           <View style={styles.divider} />
           <Text style={styles.meaningLabel}>Meaning</Text>
           <Text style={styles.meaning}>{card.meaning}</Text>
+
+          {/* Pronunciation practice */}
+          <View style={styles.practiceRow}>
+            {permissionGranted === false ? (
+              <Text style={styles.practiceNoPermission}>Microphone permission denied</Text>
+            ) : listenState === 'idle' || listenState === 'error' ? (
+              <TouchableOpacity
+                style={styles.micBtn}
+                onPress={(e) => { e.stopPropagation?.(); startListening(); }}
+              >
+                <Text style={styles.micBtnText}>🎤 Practice</Text>
+              </TouchableOpacity>
+            ) : listenState === 'starting' ? (
+              <View style={[styles.micBtn, styles.micBtnStarting]}>
+                <Text style={styles.micBtnText}>🎤 Practice</Text>
+              </View>
+            ) : listenState === 'listening' ? (
+              <TouchableOpacity
+                style={[styles.micBtn, styles.micBtnActive]}
+                onPress={(e) => { e.stopPropagation?.(); stopListening(); }}
+              >
+                <Text style={styles.micBtnText}>⏹ Listening...</Text>
+              </TouchableOpacity>
+            ) : listenState === 'processing' ? (
+              <View style={styles.processingBadge}>
+                <Text style={styles.processingText}>Processing your voice...</Text>
+              </View>
+            ) : heard !== null ? (
+              <View style={[styles.feedbackBadge, heard.includes(card.character) ? styles.feedbackCorrect : styles.feedbackWrong]}>
+                <Text style={styles.feedbackText}>
+                  {heard.includes(card.character) ? 'Correct!' : 'We heard:'}
+                </Text>
+                {!heard.includes(card.character) && (
+                  <>
+                    <Text style={styles.feedbackHeard}>{heard}</Text>
+                    <Text style={styles.feedbackPinyin}>{pinyin(heard, { toneType: 'symbol', separator: ' ' })}</Text>
+                  </>
+                )}
+                <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); resetListening(); }}>
+                  <Text style={styles.feedbackRetry}>Try again</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.micBtn}
+                onPress={(e) => { e.stopPropagation?.(); startListening(); }}
+              >
+                <Text style={styles.micBtnText}>🎤 Practice</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </Animated.View>
       </TouchableOpacity>
 
@@ -224,13 +299,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? 20 : 8,
+    paddingTop: 8,
     paddingBottom: 8,
   },
   title: {
     fontSize: 18,
     fontWeight: '700',
     color: '#2C3E50',
+  },
+  headerBtns: {
+    flexDirection: 'row',
+    gap: 12,
   },
   statsBtn: {
     padding: 6,
@@ -339,6 +418,15 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontStyle: 'italic',
   },
+  speakBtn: {
+    position: 'absolute',
+    top: 14,
+    left: 16,
+    padding: 6,
+  },
+  speakBtnText: {
+    fontSize: 20,
+  },
   knownBadge: {
     position: 'absolute',
     bottom: 16,
@@ -392,19 +480,90 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     paddingHorizontal: 8,
   },
+  practiceRow: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  micBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: '#BDC3C7',
+  },
+  micBtnStarting: {
+    opacity: 0.4,
+  },
+  micBtnActive: {
+    borderColor: '#E74C3C',
+    backgroundColor: '#FDF0EF',
+  },
+  processingBadge: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: '#EAF2FB',
+  },
+  processingText: {
+    fontSize: 13,
+    color: '#2980B9',
+    fontWeight: '500',
+  },
+  micBtnText: {
+    fontSize: 16,
+    color: '#2C3E50',
+    fontWeight: '600',
+  },
+  feedbackBadge: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    gap: 4,
+  },
+  feedbackCorrect: {
+    backgroundColor: '#E9F7EF',
+  },
+  feedbackWrong: {
+    backgroundColor: '#FDECEA',
+  },
+  feedbackText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2C3E50',
+  },
+  feedbackHeard: {
+    fontSize: 22,
+    fontWeight: '500',
+    color: '#2C3E50',
+  },
+  feedbackPinyin: {
+    fontSize: 13,
+    color: '#7F8C8D',
+    marginBottom: 2,
+  },
+  feedbackRetry: {
+    fontSize: 12,
+    color: '#7F8C8D',
+    textDecorationLine: 'underline',
+  },
+  practiceNoPermission: {
+    fontSize: 12,
+    color: '#E74C3C',
+  },
   ratingRow: {
     flexDirection: 'row',
     marginTop: 24,
     gap: 16,
   },
   ratingBtnWrapper: {
-    borderRadius: 14,
-    minWidth: 140,
+    borderRadius: 16,
+    minWidth: 155,
     overflow: 'hidden',
   },
   ratingBtn: {
-    paddingVertical: 14,
-    paddingHorizontal: 32,
+    paddingVertical: 18,
+    paddingHorizontal: 36,
     alignItems: 'center',
   },
   againBtn: {
@@ -415,7 +574,7 @@ const styles = StyleSheet.create({
   },
   ratingBtnText: {
     color: '#fff',
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '700',
   },
   navRow: {
@@ -424,9 +583,9 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   navBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 28,
-    borderRadius: 14,
+    paddingVertical: 18,
+    paddingHorizontal: 36,
+    borderRadius: 16,
     borderWidth: 1.5,
     borderColor: '#DFE1E8',
     backgroundColor: '#fff',
@@ -438,7 +597,7 @@ const styles = StyleSheet.create({
   },
   navBtnText: {
     color: '#7F8C8D',
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '600',
   },
   nextBtnText: {

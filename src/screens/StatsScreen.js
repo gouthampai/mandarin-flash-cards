@@ -5,10 +5,9 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  SafeAreaView,
   Alert,
-  Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { characters, getToneColor } from '../data/characters';
 import { useProgress } from '../hooks/useProgress';
 
@@ -147,7 +146,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? 20 : 8,
+    paddingTop: 8,
     paddingBottom: 12,
   },
   backBtn: { padding: 6 },

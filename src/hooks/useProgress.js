@@ -26,6 +26,7 @@ export const useProgress = () => {
         known,
         reviewedAt: Date.now(),
         timesReviewed: ((progress[id]?.timesReviewed) || 0) + 1,
+        timesKnown: ((progress[id]?.timesKnown) || 0) + (known ? 1 : 0),
       },
     };
     setProgress(updated);
