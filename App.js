@@ -1,20 +1,19 @@
+import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import FlashCardScreen from './src/screens/FlashCardScreen';
+import StatsScreen from './src/screens/StatsScreen';
 
 export default function App() {
+  const [screen, setScreen] = useState('flashcard');
+
   return (
-    <View style={styles.container}>
-      <Text>Open up App.js to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <>
+      <StatusBar style="dark" />
+      {screen === 'flashcard' ? (
+        <FlashCardScreen onGoToStats={() => setScreen('stats')} />
+      ) : (
+        <StatsScreen onBack={() => setScreen('flashcard')} />
+      )}
+    </>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
