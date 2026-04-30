@@ -5,62 +5,120 @@ import {
 } from 'expo-speech-recognition';
 
 export const useSpeechRecognition = () => {
-  const [state, setState] = useState('idle'); // 'idle' | 'starting' | 'listening' | 'processing' | 'done' | 'error'
+  const [state, setState] = useState('idle'); // idle | starting | listening | processing | done | no-speech | error
   const [heard, setHeard] = useState(null);
+  const [volume, setVolume] = useState(-2);
   const [permissionGranted, setPermissionGranted] = useState(null);
-  const hasResultRef = useRef(false);
+
+  // supportsOnDeviceRecognition() confirms the device has any on-device capability.
+  // We still optimistically try zh-CN and fall back via error if it's not available,
+  // since Android 14+ doesn't expose per-locale on-device availability.
+  const onDeviceAvailableRef = useRef(
+    ExpoSpeechRecognitionModule.supportsOnDeviceRecognition()
+  );
+
+  // All transcripts seen during a session (interim + final).
+  // Checked in aggregate at 'end' so an early correct interim isn't discarded
+  // if a later interim or the final result drifts to something different.
+  const allTranscriptsRef = useRef([]);
 
   useEffect(() => {
     ExpoSpeechRecognitionModule.requestPermissionsAsync().then(({ granted }) => {
       setPermissionGranted(granted);
     });
+
+    // On Android 14+, on-device models are delivered via Play system updates and
+    // are not discoverable through getSupportedLocales/androidTriggerOfflineModelDownload.
+    // We optimistically enable requiresOnDeviceRecognition and let the error handler
+    // below disable it permanently if the device truly lacks the model.
   }, []);
 
+  // Mic is confirmed live only when this event fires — safe to speak now
+  useSpeechRecognitionEvent('start', () => {
+    setState((prev) => (prev === 'starting' ? 'listening' : prev));
+  });
+
+  useSpeechRecognitionEvent('volumechange', (event) => {
+    setVolume(event.value);
+  });
+
+  // Collect every transcript as it arrives — both interim and final.
   useSpeechRecognitionEvent('result', (event) => {
-    const transcript = event.results?.[0]?.transcript ?? null;
-    if (transcript && !hasResultRef.current) {
-      hasResultRef.current = true;
-      setHeard(transcript);
-      setState('processing');
-      ExpoSpeechRecognitionModule.stop();
+    const transcript = event.results?.[0]?.transcript;
+    if (transcript) {
+      allTranscriptsRef.current.push(transcript);
     }
   });
 
+  // 'end' is always the last event in a session. Commit the full transcript
+  // list so the caller can check any of them for a match.
   useSpeechRecognitionEvent('end', () => {
-    setState((prev) => (['starting', 'listening', 'processing'].includes(prev) ? 'done' : prev));
+    setVolume(-2);
+    const transcripts = allTranscriptsRef.current;
+    console.log('done', transcripts);
+    if (transcripts.length > 0) {
+      setHeard(transcripts);
+      setState('done');
+    } else {
+      setState((prev) =>
+        prev === 'listening' || prev === 'processing' ? 'no-speech' : prev
+      );
+    }
   });
 
+  // 'error' fires before 'end' and also triggers teardownAndEnd, so 'end'
+  // will follow. We just mark the right state here; 'end' cleans up volume.
   useSpeechRecognitionEvent('error', (event) => {
-    if (event.error !== 'no-speech' && event.error !== 'aborted') {
+    if (event.error === 'aborted') return;
+    if (event.error === 'no-speech' || event.error === 'speech-timeout') {
+      setState('no-speech');
+    } else if (event.error === 'language-not-supported') {
+      // On-device zh-CN model genuinely not available — fall back to network
+      // recognition for all future attempts this session.
+      onDeviceAvailableRef.current = false;
+      setState('error');
+    } else {
       setState('error');
     }
   });
 
-  const start = useCallback(() => {
-    hasResultRef.current = false;
+  const start = useCallback(({ contextualStrings } = {}) => {
+    allTranscriptsRef.current = [];
     setHeard(null);
+    setVolume(-2);
     setState('starting');
     ExpoSpeechRecognitionModule.start({
       lang: 'zh-CN',
+      // continuous: false → standard SpeechRecognizer, no segmented sessions.
+      // Segmented sessions (continuous: true on API 33+) route audio through an
+      // internal ExpoAudioRecorder and gated onset detection, which was causing
+      // the "no result on stop" bug.
+      continuous: false,
       interimResults: true,
-      continuous: true,
       maxAlternatives: 1,
+      // Bias the recognizer toward the specific character being practiced
+      contextualStrings: contextualStrings ?? [],
+      // "web_search" model is tuned for short isolated words; "free_form" (default)
+      // is tuned for continuous speech and performs poorly on single syllables
+      androidIntentOptions: { EXTRA_LANGUAGE_MODEL: 'web_search' },
+      // Only enable on-device recognition once we've confirmed the model is installed;
+      // passing true without the model installed causes an immediate failure
+      requiresOnDeviceRecognition: onDeviceAvailableRef.current,
+      volumeChangeEventOptions: { enabled: true, intervalMillis: 80 },
     });
-    setTimeout(() => {
-      setState((prev) => (prev === 'starting' ? 'listening' : prev));
-    }, 1000);
   }, []);
 
   const stop = useCallback(() => {
+    setState('processing');
     ExpoSpeechRecognitionModule.stop();
-    setState((prev) => (prev === 'listening' ? 'processing' : prev));
   }, []);
 
   const reset = useCallback(() => {
-    hasResultRef.current = false;
+    allTranscriptsRef.current = [];
     setHeard(null);
+    setVolume(-2);
     setState('idle');
   }, []);
 
-  return { state, heard, permissionGranted, start, stop, reset };
+  return { state, heard, volume, permissionGranted, start, stop, reset };
 };

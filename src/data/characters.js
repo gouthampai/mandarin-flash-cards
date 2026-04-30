@@ -2,7 +2,7 @@
 // Based on frequency data from modern Chinese text corpora
 export const characters = [
   { id: 1, character: '的', pinyin: 'de', tone: 'neutral', meaning: 'possessive particle; structural particle' },
-  { id: 2, character: '一', pinyin: 'yī', tone: '1', meaning: 'one; a; an' },
+  { id: 2, character: '一', pinyin: 'yī', tone: '1', meaning: 'one; a; an', aliases: ['1'] },
   { id: 3, character: '是', pinyin: 'shì', tone: '4', meaning: 'to be; is; are; yes' },
   { id: 4, character: '不', pinyin: 'bù', tone: '4', meaning: 'not; no; negative prefix' },
   { id: 5, character: '了', pinyin: 'le', tone: 'neutral', meaning: 'completed action particle; change of state particle' },
@@ -77,7 +77,7 @@ export const characters = [
   { id: 74, character: '无', pinyin: 'wú', tone: '2', meaning: 'without; nothing; no; not having' },
   { id: 75, character: '开', pinyin: 'kāi', tone: '1', meaning: 'to open; to start; to drive; to boil' },
   { id: 76, character: '手', pinyin: 'shǒu', tone: '3', meaning: 'hand; expert; skill' },
-  { id: 77, character: '十', pinyin: 'shí', tone: '2', meaning: 'ten; tenth' },
+  { id: 77, character: '十', pinyin: 'shí', tone: '2', meaning: 'ten; tenth', aliases: ['10'] },
   { id: 78, character: '用', pinyin: 'yòng', tone: '4', meaning: 'to use; with; by means of; expense' },
   { id: 79, character: '主', pinyin: 'zhǔ', tone: '3', meaning: 'master; host; main; to hold; God' },
   { id: 80, character: '行', pinyin: 'xíng', tone: '2', meaning: 'to walk; to travel; okay; capable; profession; row' },
@@ -93,7 +93,7 @@ export const characters = [
   { id: 90, character: '面', pinyin: 'miàn', tone: '4', meaning: 'face; surface; side; aspect; noodles' },
   { id: 91, character: '公', pinyin: 'gōng', tone: '1', meaning: 'public; fair; male; duke; grandfather' },
   { id: 92, character: '同', pinyin: 'tóng', tone: '2', meaning: 'same; together; alike; with' },
-  { id: 93, character: '三', pinyin: 'sān', tone: '1', meaning: 'three' },
+  { id: 93, character: '三', pinyin: 'sān', tone: '1', meaning: 'three', aliases: ['3'] },
   { id: 94, character: '已', pinyin: 'yǐ', tone: '3', meaning: 'already; to stop; too; extremely' },
   { id: 95, character: '老', pinyin: 'lǎo', tone: '3', meaning: 'old; aged; experienced; very; always' },
   { id: 96, character: '从', pinyin: 'cóng', tone: '2', meaning: 'from; since; to follow; through' },
