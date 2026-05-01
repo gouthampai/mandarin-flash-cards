@@ -236,15 +236,26 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
                     </Text>
                   </>
                 )}
-                <TouchableOpacity
-                  style={styles.modalPrimaryBtn}
-                  onPress={() => { resetListening(); startListening({ contextualStrings: contextStrings }); }}
-                >
-                  <Text style={styles.modalPrimaryBtnText}>Try again</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={resetListening}>
-                  <Text style={styles.modalDismissText}>Dismiss</Text>
-                </TouchableOpacity>
+                {isCorrect ? (
+                  <TouchableOpacity
+                    style={[styles.modalPrimaryBtn, { backgroundColor: '#27AE60' }]}
+                    onPress={() => { resetListening(); goNext(true); }}
+                  >
+                    <Text style={styles.modalPrimaryBtnText}>Next Card</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      style={styles.modalPrimaryBtn}
+                      onPress={() => { resetListening(); startListening({ contextualStrings: contextStrings }); }}
+                    >
+                      <Text style={styles.modalPrimaryBtnText}>Try again</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={resetListening}>
+                      <Text style={styles.modalDismissText}>Dismiss</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </>
             )}
           </View>
