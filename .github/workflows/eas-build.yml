@@ -1,0 +1,42 @@
+name: EAS Build
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to build
+        required: true
+        default: android
+        type: choice
+        options: [android, ios, all]
+      profile:
+        description: Build profile
+        required: true
+        default: preview
+        type: choice
+        options: [preview, production]
+
+jobs:
+  build:
+    name: EAS Build (${{ inputs.platform || 'all' }} / ${{ inputs.profile || 'production' }})
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: eas build --platform ${{ inputs.platform || 'all' }} --profile ${{ inputs.profile || 'production' }} --non-interactive
