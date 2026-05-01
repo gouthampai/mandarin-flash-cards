@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,15 @@ import { pinyin } from 'pinyin-pro';
 import { characters, getToneColor, getToneName } from '../data/characters';
 import { useProgress, isDue } from '../hooks/useProgress';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
+
+const PRAISE = [
+  'Excellent!', 'Amazing!', 'Fantastic!', 'Outstanding!', 'Brilliant!',
+  'Superb!', 'Incredible!', 'Phenomenal!', 'Magnificent!', 'Spectacular!',
+  'Flawless!', 'Perfect!', 'Nailed it!', 'Crushed it!', 'Spot on!',
+  'Legendary!', 'Masterful!', 'Extraordinary!', 'Sensational!', 'On fire!',
+  'Unstoppable!', 'Impeccable!', 'Sublime!', 'Stellar!', 'Glorious!',
+  'Impressive!', 'Exceptional!', 'Dazzling!', 'Immaculate!', 'Exquisite!',
+];
 
 const speak = (character) => {
   Speech.stop();
@@ -132,6 +141,19 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
     listenState === 'done' ||
     (listenState === 'no-speech' && silentRetryDoneRef.current);
 
+  // Snapshot whether the card was unflipped when the result arrived so the
+  // modal can show the right praise even if the user flips the card afterward.
+  const wasUnflippedRef = useRef(false);
+  useEffect(() => {
+    if (listenState === 'done') wasUnflippedRef.current = !isFlipped;
+  }, [listenState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pick a new praise word each recognition session (changes when heard changes).
+  const praiseWord = useMemo(
+    () => PRAISE[Math.floor(Math.random() * PRAISE.length)],
+    [heard],
+  );
+
   if (filteredCards.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
@@ -186,12 +208,12 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
             ) : (
               <>
                 <FontAwesome5
-                  name={isCorrect ? 'check-circle' : 'times-circle'}
+                  name={isCorrect ? (wasUnflippedRef.current ? 'star' : 'check-circle') : 'times-circle'}
                   size={48}
-                  color={isCorrect ? '#27AE60' : '#E74C3C'}
+                  color={isCorrect ? (wasUnflippedRef.current ? '#F39C12' : '#27AE60') : '#E74C3C'}
                 />
-                <Text style={[styles.modalTitle, { color: isCorrect ? '#27AE60' : '#E74C3C' }]}>
-                  {isCorrect ? 'Correct!' : 'Not quite'}
+                <Text style={[styles.modalTitle, { color: isCorrect ? (wasUnflippedRef.current ? '#F39C12' : '#27AE60') : '#E74C3C' }]}>
+                  {isCorrect ? (wasUnflippedRef.current ? praiseWord : 'Correct!') : 'Not quite'}
                 </Text>
                 {!isCorrect && displayHeard && (
                   <>
@@ -310,9 +332,8 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
         </Animated.View>
       </TouchableOpacity>
 
-      {/* Mic button — only shown when card is flipped, lives outside the card */}
-      {isFlipped && (
-        <View style={styles.micRow}>
+      {/* Mic button — always visible so pronunciation can be attempted before flipping */}
+      <View style={styles.micRow}>
           {permissionGranted === false ? (
             <Text style={styles.practiceNoPermission}>Microphone permission denied</Text>
           ) : listenState === 'idle' || listenState === 'error' ? (
@@ -350,7 +371,6 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
             </View>
           ) : null}
         </View>
-      )}
 
       {/* Navigation & rating buttons */}
       {isFlipped ? (
