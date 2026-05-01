@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -39,6 +39,9 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
   const [isFlipped, setIsFlipped] = useState(false);
   const [filterMode, setFilterMode] = useState('all');
   const flipAnim = useRef(new Animated.Value(0)).current;
+  // Track whether we've already done one silent retry for the current recording attempt.
+  // Resets on card navigation or any explicit user-initiated start.
+  const silentRetryDoneRef = useRef(false);
 
   const filteredCards = filterMode === 'learning'
     ? characters.filter(c => !progress[c.id]?.known)
@@ -66,6 +69,7 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
     setIsFlipped(false);
     flipAnim.setValue(0);
     resetListening();
+    silentRetryDoneRef.current = false;
   };
 
   const goNext = (known) => {
@@ -92,13 +96,28 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
     resetCard();
   };
 
-  // Result modal — shown for both 'done' and 'no-speech' outcomes
+  // On the first no-speech result, silently restart rather than interrupting the user.
+  // Only surface the modal after two consecutive empty sessions.
+  useEffect(() => {
+    if (listenState === 'no-speech' && !silentRetryDoneRef.current) {
+      silentRetryDoneRef.current = true;
+      const t = setTimeout(() => {
+        resetListening();
+        startListening({ contextualStrings: contextStrings });
+      }, 500);
+      return () => clearTimeout(t);
+    }
+  }, [listenState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Result modal — shown for 'done', or 'no-speech' only after the silent retry has fired
   const cardAliases = card.aliases ?? [];
   const isCorrect = heard?.some(t =>
     t.includes(card.character) || cardAliases.some(alias => t.includes(alias))
   );
   const displayHeard = heard?.[heard.length - 1];
-  const modalVisible = listenState === 'done' || listenState === 'no-speech';
+  const modalVisible =
+    listenState === 'done' ||
+    (listenState === 'no-speech' && silentRetryDoneRef.current);
 
   if (filteredCards.length === 0) {
     return (
@@ -125,7 +144,11 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
         animationType="fade"
         onRequestClose={resetListening}
       >
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={resetListening}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => { silentRetryDoneRef.current = false; resetListening(); }}
+        >
           {/* Inner card stops touch from bubbling to the overlay dismiss */}
           <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
             {listenState === 'no-speech' ? (
@@ -135,11 +158,15 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
                 <Text style={styles.modalSubtitle}>Try speaking a little louder</Text>
                 <TouchableOpacity
                   style={styles.modalPrimaryBtn}
-                  onPress={() => { resetListening(); startListening({ contextualStrings: contextStrings }); }}
+                  onPress={() => {
+                    silentRetryDoneRef.current = false;
+                    resetListening();
+                    startListening({ contextualStrings: contextStrings });
+                  }}
                 >
                   <Text style={styles.modalPrimaryBtnText}>Try again</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={resetListening}>
+                <TouchableOpacity onPress={() => { silentRetryDoneRef.current = false; resetListening(); }}>
                   <Text style={styles.modalDismissText}>Dismiss</Text>
                 </TouchableOpacity>
               </>
@@ -281,9 +308,7 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
               <Text style={[styles.micBtnText, { color: '#BDC3C7' }]}>Starting...</Text>
             </View>
           ) : listenState === 'listening' ? (
-            <TouchableOpacity style={[styles.micBtn, styles.micBtnActive]} onPress={stopListening}>
-              <FontAwesome5 name="stop-circle" size={18} color="#E74C3C" />
-              <Text style={styles.micBtnText}>Tap to stop</Text>
+            <View style={styles.listeningGroup}>
               <View style={styles.volumeBar}>
                 <View style={[
                   styles.volumeFill,
@@ -291,7 +316,13 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
                   volume > 3 ? styles.volumeHigh : volume > 0 ? styles.volumeMid : styles.volumeLow,
                 ]} />
               </View>
-            </TouchableOpacity>
+              <TouchableOpacity style={styles.stopIconBtn} onPress={stopListening}>
+                <FontAwesome5 name="stop-circle" size={36} color="#E74C3C" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={resetListening}>
+                <Text style={styles.listeningDismiss}>Dismiss</Text>
+              </TouchableOpacity>
+            </View>
           ) : listenState === 'processing' ? (
             <View style={styles.processingBadge}>
               <Text style={styles.processingText}>Processing...</Text>
@@ -619,8 +650,20 @@ const styles = StyleSheet.create({
     color: '#2C3E50',
     fontWeight: '600',
   },
+  listeningGroup: {
+    alignItems: 'center',
+    gap: 10,
+  },
+  stopIconBtn: {
+    padding: 6,
+  },
+  listeningDismiss: {
+    fontSize: 13,
+    color: '#BDC3C7',
+    textDecorationLine: 'underline',
+  },
   volumeBar: {
-    width: 80,
+    width: 120,
     height: 4,
     borderRadius: 2,
     backgroundColor: '#F5C6C2',

@@ -42,12 +42,13 @@ export const useSpeechRecognition = () => {
     setVolume(event.value);
   });
 
-  // Collect every transcript as it arrives — both interim and final.
+  // Collect every transcript as it arrives — both interim and final,
+  // across all alternatives. maxAlternatives > 1 means the correct character
+  // may appear as the 2nd or 3rd result even when not ranked first.
   useSpeechRecognitionEvent('result', (event) => {
-    const transcript = event.results?.[0]?.transcript;
-    if (transcript) {
-      allTranscriptsRef.current.push(transcript);
-    }
+    (event.results ?? []).forEach((r) => {
+      if (r?.transcript) allTranscriptsRef.current.push(r.transcript);
+    });
   });
 
   // 'end' is always the last event in a session. Commit the full transcript
@@ -95,7 +96,7 @@ export const useSpeechRecognition = () => {
       // the "no result on stop" bug.
       continuous: false,
       interimResults: true,
-      maxAlternatives: 1,
+      maxAlternatives: 3,
       // Bias the recognizer toward the specific character being practiced
       contextualStrings: contextualStrings ?? [],
       // "web_search" model is tuned for short isolated words; "free_form" (default)
