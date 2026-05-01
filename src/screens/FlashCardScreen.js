@@ -13,7 +13,7 @@ import * as Speech from 'expo-speech';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { pinyin } from 'pinyin-pro';
 import { characters, getToneColor, getToneName } from '../data/characters';
-import { useProgress } from '../hooks/useProgress';
+import { useProgress, isDue } from '../hooks/useProgress';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 
 const speak = (character) => {
@@ -43,9 +43,10 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
   // Resets on card navigation or any explicit user-initiated start.
   const silentRetryDoneRef = useRef(false);
 
-  const filteredCards = filterMode === 'learning'
-    ? characters.filter(c => !progress[c.id]?.known)
-    : characters;
+  const filteredCards =
+    filterMode === 'learning' ? characters.filter(c => !progress[c.id]?.known) :
+    filterMode === 'due'      ? characters.filter(c => isDue(progress[c.id])) :
+    characters;
 
   const card = filteredCards[currentIndex] || characters[0];
   const toneColor = getToneColor(card.tone);
@@ -94,6 +95,18 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
     setFilterMode(mode);
     setCurrentIndex(0);
     resetCard();
+  };
+
+  // Preview the interval that would result from each rating choice
+  const previewInterval = (known) => {
+    const p = cardProgress;
+    if (known) {
+      const reps = p?.repetitions ?? 0;
+      if (reps === 0) return '1d';
+      if (reps === 1) return '6d';
+      return `${Math.round((p?.interval ?? 1) * (p?.easeFactor ?? 2.5))}d`;
+    }
+    return '1d';
   };
 
   // On the first no-speech result, silently restart rather than interrupting the user.
@@ -220,11 +233,11 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
       {/* Filter tabs */}
       <View style={styles.filterRow}>
         <TouchableOpacity
-          style={[styles.filterTab, filterMode === 'all' && styles.filterTabActive]}
-          onPress={() => setFilter('all')}
+          style={[styles.filterTab, filterMode === 'due' && styles.filterTabActive]}
+          onPress={() => setFilter('due')}
         >
-          <Text style={[styles.filterTabText, filterMode === 'all' && styles.filterTabTextActive]}>
-            All ({characters.length})
+          <Text style={[styles.filterTabText, filterMode === 'due' && styles.filterTabTextActive]}>
+            Due ({stats.due})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -232,7 +245,15 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
           onPress={() => setFilter('learning')}
         >
           <Text style={[styles.filterTabText, filterMode === 'learning' && styles.filterTabTextActive]}>
-            Still Learning ({stats.total - stats.known})
+            Learning ({stats.total - stats.known})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterTab, filterMode === 'all' && styles.filterTabActive]}
+          onPress={() => setFilter('all')}
+        >
+          <Text style={[styles.filterTabText, filterMode === 'all' && styles.filterTabTextActive]}>
+            All ({characters.length})
           </Text>
         </TouchableOpacity>
       </View>
@@ -336,12 +357,14 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
         <View style={styles.ratingRow}>
           <View style={[styles.ratingBtnWrapper, styles.againBtn]}>
             <TouchableOpacity style={styles.ratingBtn} onPress={() => goNext(false)}>
-              <Text style={styles.ratingBtnText}>Still Learning</Text>
+              <Text style={styles.ratingBtnText}>Again</Text>
+              <Text style={styles.ratingBtnInterval}>{previewInterval(false)}</Text>
             </TouchableOpacity>
           </View>
           <View style={[styles.ratingBtnWrapper, styles.knownBtn]}>
             <TouchableOpacity style={styles.ratingBtn} onPress={() => goNext(true)}>
               <Text style={styles.ratingBtnText}>Got It!</Text>
+              <Text style={styles.ratingBtnInterval}>{previewInterval(true)}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -714,6 +737,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  ratingBtnInterval: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 11,
+    marginTop: 2,
   },
   navRow: {
     flexDirection: 'row',
