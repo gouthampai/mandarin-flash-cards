@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,8 +13,29 @@ import * as Speech from 'expo-speech';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { pinyin } from 'pinyin-pro';
 import { characters, getToneColor, getToneName } from '../data/characters';
-import { useProgress } from '../hooks/useProgress';
+import { useProgress, isDue } from '../hooks/useProgress';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
+
+const PRAISE = [
+  'Chinese baddie in your future!', 
+  'Excellent!', 'Amazing!', 'Fantastic!', 'Outstanding!', 'Brilliant!',
+  'Superb!', 'Incredible!', 'Phenomenal!', 'Magnificent!', 'Spectacular!',
+  'Flawless!', 'Perfect!', 'Nailed it!', 'Crushed it!', 'Spot on!',
+  'Legendary!', 'Masterful!', 'Extraordinary!', 'Sensational!', 'On fire!',
+  'Unstoppable!', 'Impeccable!', 'Sublime!', 'Stellar!', 'Glorious!',
+  'Impressive!', 'Exceptional!', 'Dazzling!', 'Immaculate!', 'Exquisite!',
+  // fortune cookie easter eggs
+  'A journey of a thousand miles begins with a single character.',
+  'He who masters tones shall never go hungry in Beijing.',
+  'Your future holds many dumplings and great success.',
+  'The wise traveler learns the bathroom sign before all others.',
+  'Confucius say: one who studies flashcards is already halfway there.',
+  'He who orders off the menu impresses everyone at the table.',
+  'Lucky numbers: 1, 6, 8, 88, 888.',
+  'A good memory is the beginning of wisdom. Flashcards also help.',
+  'You will soon say something that makes a local smile.',
+  'The man who asks is a fool for five minutes. You asked nothing — you knew it.',
+];
 
 const speak = (character) => {
   Speech.stop();
@@ -43,9 +64,10 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
   // Resets on card navigation or any explicit user-initiated start.
   const silentRetryDoneRef = useRef(false);
 
-  const filteredCards = filterMode === 'learning'
-    ? characters.filter(c => !progress[c.id]?.known)
-    : characters;
+  const filteredCards =
+    filterMode === 'learning' ? characters.filter(c => !progress[c.id]?.known) :
+    filterMode === 'due'      ? characters.filter(c => isDue(progress[c.id])) :
+    characters;
 
   const card = filteredCards[currentIndex] || characters[0];
   const toneColor = getToneColor(card.tone);
@@ -96,6 +118,18 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
     resetCard();
   };
 
+  // Preview the interval that would result from each rating choice
+  const previewInterval = (known) => {
+    const p = cardProgress;
+    if (known) {
+      const reps = p?.repetitions ?? 0;
+      if (reps === 0) return '1d';
+      if (reps === 1) return '6d';
+      return `${Math.round((p?.interval ?? 1) * (p?.easeFactor ?? 2.5))}d`;
+    }
+    return '1d';
+  };
+
   // On the first no-speech result, silently restart rather than interrupting the user.
   // Only surface the modal after two consecutive empty sessions.
   useEffect(() => {
@@ -118,6 +152,19 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
   const modalVisible =
     listenState === 'done' ||
     (listenState === 'no-speech' && silentRetryDoneRef.current);
+
+  // Snapshot whether the card was unflipped when the result arrived so the
+  // modal can show the right praise even if the user flips the card afterward.
+  const wasUnflippedRef = useRef(false);
+  useEffect(() => {
+    if (listenState === 'done') wasUnflippedRef.current = !isFlipped;
+  }, [listenState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pick a new praise word each recognition session (changes when heard changes).
+  const praiseWord = useMemo(
+    () => PRAISE[Math.floor(Math.random() * PRAISE.length)],
+    [heard],
+  );
 
   if (filteredCards.length === 0) {
     return (
@@ -173,12 +220,12 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
             ) : (
               <>
                 <FontAwesome5
-                  name={isCorrect ? 'check-circle' : 'times-circle'}
+                  name={isCorrect ? (wasUnflippedRef.current ? 'star' : 'check-circle') : 'times-circle'}
                   size={48}
-                  color={isCorrect ? '#27AE60' : '#E74C3C'}
+                  color={isCorrect ? (wasUnflippedRef.current ? '#F39C12' : '#27AE60') : '#E74C3C'}
                 />
-                <Text style={[styles.modalTitle, { color: isCorrect ? '#27AE60' : '#E74C3C' }]}>
-                  {isCorrect ? 'Correct!' : 'Not quite'}
+                <Text style={[styles.modalTitle, { color: isCorrect ? (wasUnflippedRef.current ? '#F39C12' : '#27AE60') : '#E74C3C' }]}>
+                  {isCorrect ? (wasUnflippedRef.current ? praiseWord : 'Correct!') : 'Not quite'}
                 </Text>
                 {!isCorrect && displayHeard && (
                   <>
@@ -189,15 +236,26 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
                     </Text>
                   </>
                 )}
-                <TouchableOpacity
-                  style={styles.modalPrimaryBtn}
-                  onPress={() => { resetListening(); startListening({ contextualStrings: contextStrings }); }}
-                >
-                  <Text style={styles.modalPrimaryBtnText}>Try again</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={resetListening}>
-                  <Text style={styles.modalDismissText}>Dismiss</Text>
-                </TouchableOpacity>
+                {isCorrect ? (
+                  <TouchableOpacity
+                    style={[styles.modalPrimaryBtn, { backgroundColor: '#27AE60' }]}
+                    onPress={() => { resetListening(); goNext(true); }}
+                  >
+                    <Text style={styles.modalPrimaryBtnText}>Next Card</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      style={styles.modalPrimaryBtn}
+                      onPress={() => { resetListening(); startListening({ contextualStrings: contextStrings }); }}
+                    >
+                      <Text style={styles.modalPrimaryBtnText}>Try again</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={resetListening}>
+                      <Text style={styles.modalDismissText}>Dismiss</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </>
             )}
           </View>
@@ -220,11 +278,11 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
       {/* Filter tabs */}
       <View style={styles.filterRow}>
         <TouchableOpacity
-          style={[styles.filterTab, filterMode === 'all' && styles.filterTabActive]}
-          onPress={() => setFilter('all')}
+          style={[styles.filterTab, filterMode === 'due' && styles.filterTabActive]}
+          onPress={() => setFilter('due')}
         >
-          <Text style={[styles.filterTabText, filterMode === 'all' && styles.filterTabTextActive]}>
-            All ({characters.length})
+          <Text style={[styles.filterTabText, filterMode === 'due' && styles.filterTabTextActive]}>
+            Due ({stats.due})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -232,7 +290,15 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
           onPress={() => setFilter('learning')}
         >
           <Text style={[styles.filterTabText, filterMode === 'learning' && styles.filterTabTextActive]}>
-            Still Learning ({stats.total - stats.known})
+            Learning ({stats.total - stats.known})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterTab, filterMode === 'all' && styles.filterTabActive]}
+          onPress={() => setFilter('all')}
+        >
+          <Text style={[styles.filterTabText, filterMode === 'all' && styles.filterTabTextActive]}>
+            All ({characters.length})
           </Text>
         </TouchableOpacity>
       </View>
@@ -289,9 +355,8 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
         </Animated.View>
       </TouchableOpacity>
 
-      {/* Mic button — only shown when card is flipped, lives outside the card */}
-      {isFlipped && (
-        <View style={styles.micRow}>
+      {/* Mic button — always visible so pronunciation can be attempted before flipping */}
+      <View style={styles.micRow}>
           {permissionGranted === false ? (
             <Text style={styles.practiceNoPermission}>Microphone permission denied</Text>
           ) : listenState === 'idle' || listenState === 'error' ? (
@@ -329,19 +394,20 @@ export default function FlashCardScreen({ onGoToStats, onGoToCardList }) {
             </View>
           ) : null}
         </View>
-      )}
 
       {/* Navigation & rating buttons */}
       {isFlipped ? (
         <View style={styles.ratingRow}>
           <View style={[styles.ratingBtnWrapper, styles.againBtn]}>
             <TouchableOpacity style={styles.ratingBtn} onPress={() => goNext(false)}>
-              <Text style={styles.ratingBtnText}>Still Learning</Text>
+              <Text style={styles.ratingBtnText}>Again</Text>
+              <Text style={styles.ratingBtnInterval}>{previewInterval(false)}</Text>
             </TouchableOpacity>
           </View>
           <View style={[styles.ratingBtnWrapper, styles.knownBtn]}>
             <TouchableOpacity style={styles.ratingBtn} onPress={() => goNext(true)}>
               <Text style={styles.ratingBtnText}>Got It!</Text>
+              <Text style={styles.ratingBtnInterval}>{previewInterval(true)}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -714,6 +780,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  ratingBtnInterval: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 11,
+    marginTop: 2,
   },
   navRow: {
     flexDirection: 'row',
